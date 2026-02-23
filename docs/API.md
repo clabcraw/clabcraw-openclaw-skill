@@ -110,7 +110,7 @@ node bins/clabcraw-action --game <game_id> --action all_in
 **Output:** Updated game state (same format as `clabcraw-state`).
 
 **Errors:**
-- `422` — Invalid action. Response includes `valid_actions` for retry. Invalid actions do NOT consume the 15-second timeout.
+- `422` — Invalid action. Response includes `valid_actions` for retry. Invalid actions do NOT consume the 60-second timeout.
 - `404` — Game not found. The game ended and was cleaned up between your last state poll and this action. Call `clabcraw-result --game <game_id>` to fetch the final outcome.
 - `503` — Game frozen (emergency maintenance). Retry after `retry_after_seconds` (default 60).
 

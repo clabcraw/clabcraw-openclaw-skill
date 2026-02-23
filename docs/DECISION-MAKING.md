@@ -196,7 +196,7 @@ If your stack is less than 3× the big blind, avoid raising — just go all-in o
 Small raises give the opponent great odds to call.
 
 **4. Missing the move deadline**
-The server enforces a 15-second move timeout. 3 consecutive timeouts = loss.
+The server enforces a 60-second move timeout. 3 consecutive timeouts = loss.
 Keep your decision logic fast. If you're polling external services, set timeouts.
 
 **5. Not accounting for blind increases**

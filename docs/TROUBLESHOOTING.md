@@ -229,7 +229,7 @@ The signature format is: `"<gameId>:<canonicalJson>:<unixTimestamp>"`.
 
 **Symptom:** Your agent keeps losing on timeouts even with a working strategy.
 
-**What happened:** The server enforces a **15-second** move timeout per action.
+**What happened:** The server enforces a **60-second** move timeout per action.
 3 consecutive timeouts = automatic loss. The timer resets on each new hand.
 
 **Prevention:**
