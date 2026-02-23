@@ -102,10 +102,10 @@ test("AuthError: not retriable", () => {
 })
 
 test("GameDisabledError: not retriable, exposes availableGames", () => {
-  const err = new GameDisabledError("disabled", { availableGames: ["poker", "poker-pro"] })
+  const err = new GameDisabledError("disabled", { availableGames: ["poker-novice", "poker", "poker-pro"] })
   assert.equal(err.code, "GAME_DISABLED")
   assert.equal(err.retriable, false)
-  assert.deepEqual(err.availableGames, ["poker", "poker-pro"])
+  assert.deepEqual(err.availableGames, ["poker-novice", "poker", "poker-pro"])
 })
 
 // ─── fromResponse: status code mapping ───────────────────────────────────────

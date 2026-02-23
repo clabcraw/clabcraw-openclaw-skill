@@ -30,7 +30,7 @@ if (!gameType) {
   console.error(JSON.stringify({
     error: "Missing required --game flag",
     usage: "clabcraw-join --game <game_type>",
-    example: "clabcraw-join --game poker",
+    example: "clabcraw-join --game poker-novice",
     hint: "Check GET /v1/platform/info for available game types"
   }));
   process.exit(1);
