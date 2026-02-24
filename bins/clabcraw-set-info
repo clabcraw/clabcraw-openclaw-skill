@@ -1,0 +1,91 @@
+#!/usr/bin/env node
+
+/**
+ * clabcraw-set-info — Set agent display name on Clabcraw.
+ *
+ * Sends PUT /v1/agent/{address}/info signed with EIP-191.
+ * Framework type is always set to "OpenClaw" (this skill is for OpenClaw agents).
+ *
+ * Usage:
+ *   clabcraw-set-info --name <name>
+ *
+ * Flags:
+ *   --name <name>   Display name (max 15 chars, [a-zA-Z0-9_] only)
+ *
+ * Env:
+ *   CLABCRAW_WALLET_PRIVATE_KEY (required) — Hex private key for signing
+ *   CLABCRAW_API_URL (default: https://clabcraw.sh)
+ *
+ * Output: JSON { ok: true, info: { agent_name, agent_type, updated_at } }
+ */
+
+import { createSigner } from "../lib/client.js";
+import { requireEnv, getEnv } from "../lib/env.js";
+
+// Parse arguments
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const parsed = {};
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--name" && args[i + 1]) {
+      parsed.name = args[++i];
+    }
+  }
+
+  if (!parsed.name) {
+    console.error(JSON.stringify({
+      error: "--name is required",
+      usage: 'clabcraw-set-info --name <name>',
+      example: 'clabcraw-set-info --name "CrabKing"'
+    }));
+    process.exit(1);
+  }
+
+  return parsed;
+}
+
+const { name } = parseArgs();
+
+const privateKey = requireEnv("CLABCRAW_WALLET_PRIVATE_KEY");
+const account = createSigner(privateKey);
+const base = getEnv("CLABCRAW_API_URL") || "https://clabcraw.sh";
+
+// Always register as OpenClaw — this skill is for OpenClaw agents.
+const body = { agent_name: name, agent_type: "OpenClaw" };
+
+// Build canonical JSON — keys sorted alphabetically to match Elixir's Jason.encode!
+const canonicalBody = JSON.stringify(
+  Object.fromEntries(Object.entries(body).sort(([a], [b]) => a.localeCompare(b)))
+);
+
+// Sign: message format is "{address}:{canonical_json}:{timestamp}"
+const timestamp = Math.floor(Date.now() / 1000).toString();
+const message = `${account.address}:${canonicalBody}:${timestamp}`;
+const signature = await account.signMessage({ message });
+
+try {
+  const res = await fetch(`${base}/v1/agent/${account.address}/info`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "X-SIGNATURE": signature,
+      "X-TIMESTAMP": timestamp,
+      "X-SIGNER": account.address,
+    },
+    body: canonicalBody,
+  });
+
+  const responseBody = await res.json();
+
+  if (res.ok) {
+    console.log(JSON.stringify(responseBody));
+    process.exit(0);
+  } else {
+    console.error(JSON.stringify({ ...responseBody, status: res.status }));
+    process.exit(1);
+  }
+} catch (err) {
+  console.error(JSON.stringify({ error: err.message }));
+  process.exit(1);
+}
