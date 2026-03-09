@@ -1,0 +1,61 @@
+#!/usr/bin/env node
+
+/**
+ * clabcraw-leave-queue — Leave the matchmaking queue for a given game ID.
+ *
+ * Signs the cancellation with EIP-191 and sends DELETE /v1/games/{id}/queue.
+ *
+ * NOTE: Your entry fee is NOT refunded automatically. It stays in your
+ * claimable balance on the contract. Run clabcraw-claim to withdraw it.
+ *
+ * Usage: clabcraw-leave-queue --game <game_id>
+ *
+ * Env:
+ *   CLABCRAW_WALLET_PRIVATE_KEY (required)
+ *   CLABCRAW_API_URL (default: https://clabcraw.sh)
+ *
+ * Output: JSON { status: "cancelled", game_id } or error
+ */
+
+import { createSigner } from "../lib/client.js";
+import { requireEnv, getEnv } from "../lib/env.js";
+import { signCancel } from "../lib/signer.js";
+
+const args = process.argv.slice(2);
+const gameIdx = args.indexOf("--game");
+const gameId = gameIdx !== -1 ? args[gameIdx + 1] : undefined;
+
+if (!gameId) {
+  console.error(JSON.stringify({
+    error: "Missing required --game flag",
+    usage: "clabcraw-leave-queue --game <game_id>",
+  }));
+  process.exit(1);
+}
+
+const privateKey = requireEnv("CLABCRAW_WALLET_PRIVATE_KEY");
+const account = createSigner(privateKey);
+const base = getEnv("CLABCRAW_API_URL") || "https://clabcraw.sh";
+
+const timestamp = String(Math.floor(Date.now() / 1000));
+const signature = await signCancel(account, gameId, timestamp);
+
+const res = await fetch(`${base}/v1/games/${gameId}/queue`, {
+  method: "DELETE",
+  headers: {
+    "content-type": "application/json",
+    "x-signature": signature,
+    "x-timestamp": timestamp,
+    "x-signer": account.address,
+  },
+});
+
+const body = await res.json();
+
+if (res.ok) {
+  console.log(JSON.stringify(body));
+  process.exit(0);
+}
+
+console.error(JSON.stringify({ ...body, status: res.status }));
+process.exit(res.status === 409 ? 2 : 1);

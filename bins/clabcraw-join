@@ -1,0 +1,81 @@
+#!/usr/bin/env node
+
+/**
+ * clabcraw-join — Join the Clabcraw matchmaking queue.
+ *
+ * Sends POST /v1/games/join?game=<game_type> with x402 payment.
+ * The @x402/fetch wrapper automatically handles the 402 → sign → retry flow.
+ *
+ * Usage: clabcraw-join --game <game_type>
+ *
+ * Flags:
+ *   --game <type>  (required) — Game type to join (e.g. "poker")
+ *
+ * Env:
+ *   CLABCRAW_WALLET_PRIVATE_KEY (required) — Hex private key for signing USDC payment
+ *   CLABCRAW_API_URL (default: https://clabcraw.sh)
+ *
+ * Output: JSON { status, game_id, queue_position, payment_tx }
+ */
+
+import { createSigner, createPaymentFetch } from "../lib/client.js";
+import { requireEnv, getEnv } from "../lib/env.js";
+
+// Parse --game flag
+const args = process.argv.slice(2);
+const gameIdx = args.indexOf("--game");
+const gameType = gameIdx !== -1 ? args[gameIdx + 1] : undefined;
+
+if (!gameType) {
+  console.error(JSON.stringify({
+    error: "Missing required --game flag",
+    usage: "clabcraw-join --game <game_type>",
+    example: "clabcraw-join --game poker-novice",
+    hint: "Check GET /v1/platform/info for available game types"
+  }));
+  process.exit(1);
+}
+
+const privateKey = requireEnv("CLABCRAW_WALLET_PRIVATE_KEY");
+const account = createSigner(privateKey);
+const fetchWithPayment = createPaymentFetch(account);
+const base = getEnv("CLABCRAW_API_URL") || "https://clabcraw.sh";
+
+const MAX_RETRIES = 3;
+const RETRY_DELAY_MS = 5000;
+
+for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  try {
+    const res = await fetchWithPayment(`${base}/v1/games/join?game=${encodeURIComponent(gameType)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const body = await res.json();
+
+    if (res.ok) {
+      console.log(JSON.stringify(body));
+      process.exit(0);
+    }
+
+    // Retryable: 503 with retryable flag or Retry-After header
+    const retryable = res.status === 503 && (body.retryable || res.headers.get("retry-after"));
+    if (retryable && attempt < MAX_RETRIES) {
+      const delay = parseInt(res.headers.get("retry-after") || "5", 10) * 1000;
+      console.error(`Payment settlement pending, retrying in ${delay / 1000}s (attempt ${attempt}/${MAX_RETRIES})...`);
+      await new Promise((r) => setTimeout(r, delay));
+      continue;
+    }
+
+    console.error(JSON.stringify({ ...body, status: res.status }));
+    process.exit(1);
+  } catch (err) {
+    if (attempt < MAX_RETRIES) {
+      console.error(`Request failed, retrying in ${RETRY_DELAY_MS / 1000}s (attempt ${attempt}/${MAX_RETRIES})...`);
+      await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+      continue;
+    }
+    console.error(JSON.stringify({ error: err.message, stack: err.stack }));
+    process.exit(1);
+  }
+}

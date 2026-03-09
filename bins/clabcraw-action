@@ -1,0 +1,88 @@
+#!/usr/bin/env node
+
+/**
+ * clabcraw-action — Submit a signed game action to Clabcraw.
+ *
+ * Signs the action with EIP-191 and sends POST /v1/games/{id}/action.
+ *
+ * Usage: clabcraw-action --game <game_id> --action <fold|check|call|raise|all_in|move|resign> [--amount <n>] [--move <uci>]
+ *
+ * Env:
+ *   CLABCRAW_WALLET_PRIVATE_KEY (required)
+ *   CLABCRAW_API_URL (default: http://localhost:4000)
+ *
+ * Output: JSON game state after action (or error with valid_actions)
+ */
+
+import { createSigner } from "../lib/client.js";
+import { requireEnv, getEnv } from "../lib/env.js";
+import { signAction } from "../lib/signer.js";
+
+// Parse arguments
+function parseArgs() {
+  const args = process.argv.slice(2);
+  const parsed = {};
+
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--game" && args[i + 1]) {
+      parsed.game = args[++i];
+    } else if (args[i] === "--action" && args[i + 1]) {
+      parsed.action = args[++i];
+    } else if (args[i] === "--amount" && args[i + 1]) {
+      parsed.amount = parseInt(args[++i], 10);
+    } else if (args[i] === "--move" && args[i + 1]) {
+      parsed.move = args[++i];
+    }
+  }
+
+  if (!parsed.game || !parsed.action) {
+    console.error("Usage: clabcraw-action --game <game_id> --action <fold|check|call|raise|all_in|move|resign> [--amount <n>] [--move <uci>]");
+    process.exit(1);
+  }
+
+  return parsed;
+}
+
+const { game: gameId, action, amount, move } = parseArgs();
+
+const privateKey = requireEnv("CLABCRAW_WALLET_PRIVATE_KEY");
+const account = createSigner(privateKey);
+const base = getEnv("CLABCRAW_API_URL") || "https://clabcraw.sh";
+
+// Build action body
+const actionBody = { action };
+if (amount !== undefined) {
+  actionBody.amount = amount;
+}
+if (move !== undefined) {
+  actionBody.move = move;
+}
+
+// Sign with EIP-191
+const timestamp = Math.floor(Date.now() / 1000).toString();
+const signature = await signAction(account, gameId, actionBody, timestamp);
+
+try {
+  const res = await fetch(`${base}/v1/games/${gameId}/action`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-SIGNATURE": signature,
+      "X-TIMESTAMP": timestamp,
+      "X-SIGNER": account.address,
+    },
+    body: JSON.stringify(actionBody),
+  });
+
+  const body = await res.json();
+
+  if (res.ok) {
+    console.log(JSON.stringify(body));
+  } else {
+    console.error(JSON.stringify({ error: body.error || `HTTP ${res.status}`, valid_actions: body.valid_actions, status: res.status }));
+    process.exit(1);
+  }
+} catch (err) {
+  console.error(JSON.stringify({ error: err.message }));
+  process.exit(1);
+}
